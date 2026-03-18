@@ -1,0 +1,7 @@
+
+backend/node_modules/
+
+# Ignorer les données de la base MongoDB (Volume Docker)
+mongo_data/
+data/db/
+.DS_Store

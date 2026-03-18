@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>PeMSD7 — Stations Los Angeles</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;600&family=DM+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #f0f4f8;
+            --panel: rgba(255, 255, 255, 0.95);
+            --accent: #2563eb;
+            --accent2: #f97316;
+            --text: #1e293b;
+            --muted: #94a3b8;
+            --border: rgba(37, 99, 235, 0.15);
+            --shadow: 0 4px 24px rgba(0,0,0,0.08);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow: hidden;
+        }
+
+        #map { height: 100vh; width: 100vw; }
+
+        #header {
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            z-index: 1000;
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            backdrop-filter: blur(12px);
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            box-shadow: var(--shadow);
+            animation: slideDown 0.4s ease;
+        }
+
+        @keyframes slideDown {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .logo {
+            font-family: 'DM Mono', monospace;
+            font-size: 18px;
+            color: var(--accent);
+            letter-spacing: 2px;
+        }
+        .logo span { color: var(--accent2); }
+
+        .divider { width: 1px; height: 28px; background: var(--border); }
+
+        #status {
+            font-family: 'DM Mono', monospace;
+            font-size: 13px;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--accent);
+            animation: pulse 1.5s infinite;
+            flex-shrink: 0;
+        }
+        .dot.error { background: #ef4444; animation: none; }
+        .dot.ready { background: #22c55e; animation: none; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.3; transform: scale(0.7); }
+        }
+
+        #counter {
+            margin-left: auto;
+            font-size: 13px;
+            color: var(--muted);
+        }
+        #counter strong { color: var(--accent2); font-size: 20px; font-weight: 600; }
+
+        /* Popup */
+        .leaflet-popup-content-wrapper {
+            background: white !important;
+            border: 1px solid var(--border) !important;
+            border-radius: 10px !important;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.12) !important;
+            color: var(--text) !important;
+            padding: 0 !important;
+            overflow: hidden;
+        }
+        .leaflet-popup-content {
+            margin: 0 !important;
+        }
+        .leaflet-popup-tip { background: white !important; }
+        .leaflet-popup-close-button { color: var(--muted) !important; }
+
+        .popup-header {
+            background: var(--accent);
+            color: white;
+            padding: 10px 14px;
+            font-family: 'DM Mono', monospace;
+            font-size: 13px;
+            letter-spacing: 1px;
+        }
+
+        .popup-body { padding: 10px 14px; }
+
+        .popup-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            font-size: 13px;
+            padding: 5px 0;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .popup-row:last-child { border-bottom: none; }
+        .popup-label { color: var(--muted); }
+        .popup-value { color: var(--text); font-weight: 600; }
+
+
+    </style>
+</head>
+<body>
+
+<div id="header">
+    <div class="logo">PeMS<span>D7</span></div>
+    <div class="divider"></div>
+    <div id="status">
+        <div class="dot" id="dot"></div>
+        <span id="status-text">Chargement des stations...</span>
+    </div>
+    <div id="counter" style="display:none">
+        <strong id="count">0</strong> stations
+    </div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    const map = L.map('map', { zoomControl: false }).setView([34.0522, -118.2437], 10);
+
+    // Tuiles claires et propres
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    fetch('http://localhost:5000/api/stations')
+        .then(r => r.json())
+        .then(stations => {
+            document.getElementById('dot').className = 'dot ready';
+            document.getElementById('status-text').textContent = 'Données chargées';
+            document.getElementById('counter').style.display = 'block';
+            document.getElementById('count').textContent = stations.length;
+
+            stations.forEach(station => {
+                const lat = parseFloat(station.Latitude);
+                const lon = parseFloat(station.Longitude);
+
+                if (!isNaN(lat) && !isNaN(lon)) {
+                    const popupHtml = `
+                        <div class="popup-header">Station ${station.ID || 'N/A'}</div>
+                        <div class="popup-body">
+                            <div class="popup-row">
+                                <span class="popup-label">Freeway</span>
+                                <span class="popup-value">${station.Fwy || 'N/A'}</span>
+                            </div>
+                            <div class="popup-row">
+                                <span class="popup-label">Direction</span>
+                                <span class="popup-value">${station.Dir || 'N/A'}</span>
+                            </div>
+                            <div class="popup-row">
+                                <span class="popup-label">Latitude</span>
+                                <span class="popup-value">${station.Latitude}</span>
+                            </div>
+                            <div class="popup-row">
+                                <span class="popup-label">Longitude</span>
+                                <span class="popup-value">${station.Longitude}</span>
+                            </div>
+                        </div>
+                    `;
+                    L.marker([lat, lon])
+                     .addTo(map)
+                     .bindPopup(popupHtml, { maxWidth: 220 });
+                }
+            });
+        })
+        .catch(error => {
+            document.getElementById('dot').className = 'dot error';
+            document.getElementById('status-text').textContent = 'Erreur de connexion';
+            console.error('Erreur:', error);
+        });
+</script>
+</body>
+</html>
